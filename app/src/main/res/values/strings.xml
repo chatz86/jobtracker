@@ -1,7 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">JobTracker</string>
-    <string name="tile_description">Quick start for Job Tracker</string>
-    <string name="tile_name">Job Tracker Tile</string>
     <string name="complication_label">Job Tracker</string>
-    <string name="hello_world">Hello, %1$s!</string>
 </resources>

@@ -5,31 +5,26 @@ plugins {
 
 android {
     namespace = "com.example.jobtracker"
-    compileSdk {
-        version = release(37)
-    }
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.example.jobtracker"
         minSdk = 30
         targetSdk = 37
-        versionCode = 3
-        versionName = "1.2"
-
+        versionCode = 5
+        versionName = "1.1"
     }
 
     buildTypes {
         release {
-            optimization {
-                enable = false
-            }
+            isMinifyEnabled = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
-    useLibrary("wear-sdk")
     buildFeatures {
         compose = true
     }
@@ -40,23 +35,23 @@ dependencies {
     implementation(libs.activity.compose)
     implementation(libs.activity.ktx)
     implementation(libs.wear)
-    implementation(libs.wear.ongoing)
-    implementation(libs.datastore.preferences)
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
     implementation(libs.compose.ui.tooling)
     implementation(libs.core.splashscreen)
     implementation(libs.play.services.wearable)
-    implementation(libs.wear.watchface.complications.datasource)
-    implementation(libs.wear.watchface.complications.data)
     implementation(libs.wear.tiles)
     implementation(libs.protolayout.material)
-    implementation("com.google.guava:guava:33.1.0-android")
+    implementation(libs.guava)
     implementation(libs.ui)
     implementation(libs.ui.graphics)
     implementation(libs.ui.tooling.preview)
     implementation(libs.wear.tooling.preview)
-    androidTestImplementation(libs.ui.test.junit4)
-    debugImplementation(libs.ui.test.manifest)
+    implementation(libs.lifecycle.runtime.ktx)
+    implementation(libs.coroutines.play.services)
+    implementation(libs.wear.complications.data)
+    implementation(libs.wear.complications.datasource)
+    implementation(libs.wear.complications.datasource.ktx)
     debugImplementation(libs.ui.tooling)
+    debugImplementation(libs.ui.test.manifest)
 }

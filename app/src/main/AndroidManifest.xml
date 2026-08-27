@@ -1,15 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:tools="http://schemas.android.com/tools"
-    xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <uses-feature android:name="android.hardware.type.watch" />
 
@@ -17,25 +19,18 @@
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.DeviceDefault">
-
-        <uses-library
-            android:name="com.google.android.wearable"
-            android:required="true" />
-        <uses-library
-            android:name="wear-sdk"
-            android:required="false" />
+        android:theme="@android:style/Theme.DeviceDefault"
+        tools:targetApi="35">
 
         <meta-data
-            android:name="com.google.android.wearable.standalone"
-            android:value="true" />
+            android:name="com.google.android.gms.version"
+            android:value="@integer/google_play_services_version" />
 
         <activity
-            android:name=".presentation.MainActivity"
+            android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleInstance"
-            android:taskAffinity=""
             android:theme="@android:style/Theme.DeviceDefault">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -43,8 +38,31 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".KeyboardActivity"
+            android:theme="@android:style/Theme.DeviceDefault"
+            android:windowSoftInputMode="stateAlwaysVisible"
+            android:exported="false" />
+
         <service
-            android:name=".presentation.JobTrackerComplicationService"
+            android:name=".JobTrackerService"
+            android:foregroundServiceType="specialUse"
+            android:exported="false" />
+
+        <service
+            android:name=".WearSyncService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data
+                    android:host="*"
+                    android:pathPrefix="/jobtracker"
+                    android:scheme="wear" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".JobTrackerComplicationService"
             android:exported="true"
             android:label="@string/complication_label"
             android:icon="@mipmap/ic_launcher"
@@ -62,39 +80,18 @@
         </service>
 
         <service
-            android:name=".presentation.JobTrackerTileService"
+            android:name=".TileService"
             android:exported="true"
-            android:label="@string/tile_name"
-            android:icon="@mipmap/ic_launcher"
-            android:description="@string/tile_description"
-            android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER">
+            android:permission="com.google.android.gms.permission.BIND_TILE_PROVIDER">
             <intent-filter>
-                <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
-            </intent-filter>
-
-            <meta-data
-                android:name="androidx.wear.tiles.PREVIEW_RESOURCES"
-                android:resource="@array/tile_preview_resources" />
-        </service>
-
-        <service
-            android:name=".presentation.JobTrackerService"
-            android:enabled="true"
-            android:exported="false"
-            android:foregroundServiceType="specialUse">
-            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Work tracking and clinical safety monitoring for health staff." />
-        </service>
-
-        <service
-            android:name=".presentation.WearSyncService"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
-                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
-                <data android:scheme="wear" android:host="*" android:pathPrefix="/jobtracker" />
+                <action android:name="android.support.wearable.tiles.action.BIND_TILE_PROVIDER" />
+                <action android:name="com.google.android.gms.wearable.tiles.action.BIND_TILE_PROVIDER" />
+                <data
+                    android:scheme="wear"
+                    android:host="*"
+                    android:pathPrefix="/jobtracker_tile" />
             </intent-filter>
         </service>
+
     </application>
-
 </manifest>
