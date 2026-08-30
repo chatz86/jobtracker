@@ -14,6 +14,16 @@ data class PhoneActiveEntry(
     val patientId: String = "",
     val notes: String = ""
 ) {
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("type", type)
+        put("startTime", startTime)
+        put("ward", ward)
+        put("attendees", JSONArray(attendees))
+        put("patientName", patientName)
+        put("patientId", patientId)
+        put("notes", notes)
+    }
+
     companion object {
         fun fromJson(json: JSONObject): PhoneActiveEntry? = try {
             PhoneActiveEntry(
@@ -41,6 +51,17 @@ data class PhoneHistoryRecord(
     val patientId: String = "",
     val notes: String = ""
 ) {
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("type", type)
+        put("startTime", startTime)
+        put("endTime", endTime)
+        put("ward", ward)
+        put("attendees", JSONArray(attendees))
+        put("patientName", patientName)
+        put("patientId", patientId)
+        put("notes", notes)
+    }
+
     companion object {
         fun fromJson(json: JSONObject): PhoneHistoryRecord? = try {
             PhoneHistoryRecord(
