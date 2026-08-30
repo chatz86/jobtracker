@@ -1,6 +1,10 @@
 package com.example.jobtracker
 
+import android.content.Intent
 import android.util.Log
+import com.google.android.gms.wearable.DataEvent
+import com.google.android.gms.wearable.DataEventBuffer
+import com.google.android.gms.wearable.DataMapItem
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.WearableListenerService
 import org.json.JSONArray
@@ -10,8 +14,22 @@ class PhoneWearSyncService : WearableListenerService() {
     override fun onMessageReceived(messageEvent: MessageEvent) {
         val payload = String(messageEvent.data, Charsets.UTF_8)
         Log.d("PhoneSync", "Received ${messageEvent.path}: ${payload.take(100)}")
+        handlePayload(messageEvent.path, payload)
+    }
 
-        when (messageEvent.path) {
+    override fun onDataChanged(dataEvents: DataEventBuffer) {
+        for (event in dataEvents) {
+            if (event.type != DataEvent.TYPE_CHANGED) continue
+            val item = event.dataItem
+            val path = item.uri.path ?: continue
+            val payload = DataMapItem.fromDataItem(item).dataMap.getString("payload") ?: continue
+            Log.d("PhoneSync", "DataChanged $path: ${payload.take(100)}")
+            handlePayload(path, payload)
+        }
+    }
+
+    private fun handlePayload(path: String, payload: String) {
+        when (path) {
             "/jobtracker/config" -> {
                 try {
                     val parts = payload.split("||")
@@ -52,8 +70,7 @@ class PhoneWearSyncService : WearableListenerService() {
             }
         }
 
-        // Notify the UI to refresh
-        val refreshIntent = android.content.Intent("com.example.jobtracker.REFRESH")
+        val refreshIntent = Intent("com.example.jobtracker.REFRESH")
         sendBroadcast(refreshIntent)
     }
 }

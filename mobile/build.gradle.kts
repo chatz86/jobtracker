@@ -8,7 +8,7 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.example.jobtracker.mobile"
+        applicationId = "com.example.jobtracker"
         minSdk = 26
         targetSdk = 37
         versionCode = 5

@@ -69,6 +69,11 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
     }
+
+    override fun onResume() {
+        super.onResume()
+        Syncer.syncAll(this)
+    }
 }
 
 sealed class Screen {
@@ -141,6 +146,8 @@ fun JobTrackerScreen(quickStartFromIntent: Boolean = false) {
         patientName = ""
         patientId = ""
         notes = ""
+        Syncer.syncHistory(context)
+        Syncer.syncActive(context)
         screen = Screen.Summary
     }
 
@@ -175,13 +182,15 @@ fun JobTrackerScreen(quickStartFromIntent: Boolean = false) {
                     val updated = wards + text.trim()
                     Persistence.saveWards(context, updated)
                     wards = updated
+                    Syncer.syncConfig(context)
                 }
             }
             screen == Screen.AddText && addToTarget == "attendees" -> {
                 if (text.isNotBlank()) {
                     val updated = attendees + text.trim()
-                    Persistence.saveAttendees(context, attendees + text.trim())
+                    Persistence.saveAttendees(context, updated)
                     attendees = updated
+                    Syncer.syncConfig(context)
                 }
             }
         }
@@ -371,6 +380,7 @@ fun JobTrackerScreen(quickStartFromIntent: Boolean = false) {
                             val entry = ActiveEntry(selectedType, startTime, selectedWard, selectedAttendees.toList())
                             Persistence.saveActiveEntry(context, entry)
                             activeEntry = entry
+                            Syncer.syncActive(context)
                             val serviceIntent = Intent(context, JobTrackerService::class.java).apply {
                                 putExtra("TYPE", selectedType)
                                 putExtra("LOCATION", selectedWard)
@@ -671,6 +681,7 @@ fun JobTrackerScreen(quickStartFromIntent: Boolean = false) {
                                 PinAction.DeleteAttendees -> { Persistence.deleteAttendees(context, pendingDelete); attendees = Persistence.getAttendees(context) }
                                 else -> {}
                             }
+                            Syncer.syncConfig(context)
                             screen = Screen.Settings
                         },
                         modifier = Modifier.width(170.dp),
@@ -713,6 +724,7 @@ fun JobTrackerScreen(quickStartFromIntent: Boolean = false) {
                                                 PinAction.ClearHistory -> {
                                                     Persistence.clearHistory(context)
                                                     history = emptyList()
+                                                    Syncer.syncHistory(context)
                                                     screen = Screen.Settings
                                                 }
                                                 PinAction.DeleteWards, PinAction.DeleteAttendees -> {

@@ -7,12 +7,21 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 
 class JobTrackerService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
+    private val periodicHandler = Handler(Looper.getMainLooper())
+    private val periodicSync = object : Runnable {
+        override fun run() {
+            Syncer.syncAll(this@JobTrackerService)
+            periodicHandler.postDelayed(this, 30_000)
+        }
+    }
 
     companion object {
         const val CHANNEL_ID = "jobtracker_channel"
@@ -32,10 +41,12 @@ class JobTrackerService : Service() {
 
         val notification = buildNotification(type, ward, startTime)
         startForeground(NOTIFICATION_ID, notification)
+        periodicHandler.postDelayed(periodicSync, 30_000)
         return START_STICKY
     }
 
     override fun onDestroy() {
+        periodicHandler.removeCallbacks(periodicSync)
         releaseWakeLock()
         super.onDestroy()
     }

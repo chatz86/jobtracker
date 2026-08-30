@@ -26,6 +26,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -38,6 +39,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material3.Button
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -66,12 +68,21 @@ fun PhoneReceiverUI() {
         onDispose { context.unregisterReceiver(receiver) }
     }
 
+    LaunchedEffect(Unit) {
+        PhoneSyncer.requestFullSync(context)
+    }
+
     val active = remember(refreshKey) { PhonePersistence.getActiveEntry(context) }
     val history = remember(refreshKey) { PhonePersistence.getHistory(context) }
 
     Column(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         TopAppBar(
             title = { Text("JobTracker", color = Color(0xFF64B5F6)) },
+            actions = {
+                androidx.compose.material3.IconButton(onClick = { refreshKey++; PhoneSyncer.requestFullSync(context) }) {
+                    androidx.compose.material3.Text("Refresh", color = Color(0xFF64B5F6), fontSize = 12.sp)
+                }
+            },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF1A1A1A))
         )
 
