@@ -6,11 +6,17 @@ import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.DataMapItem
 import com.google.android.gms.wearable.MessageEvent
+import com.google.android.gms.wearable.Node
 import com.google.android.gms.wearable.WearableListenerService
 import org.json.JSONArray
 import org.json.JSONObject
 
 class PhoneWearSyncService : WearableListenerService() {
+    override fun onPeerConnected(node: Node) {
+        Log.d("PhoneSync", "Peer connected ${node.displayName}, requesting full state")
+        PhoneSync.request(this)
+    }
+
     override fun onMessageReceived(messageEvent: MessageEvent) {
         val payload = String(messageEvent.data, Charsets.UTF_8)
         Log.d("PhoneSync", "Received ${messageEvent.path}: ${payload.take(100)}")
@@ -30,7 +36,7 @@ class PhoneWearSyncService : WearableListenerService() {
 
     private fun handlePayload(path: String, payload: String) {
         when (path) {
-            "/jobtracker/config" -> {
+            Config.SYNC_PATH_CONFIG -> {
                 try {
                     val parts = payload.split("||")
                     for (part in parts) {
@@ -49,7 +55,7 @@ class PhoneWearSyncService : WearableListenerService() {
                     Log.e("PhoneSync", "Config parse error", e)
                 }
             }
-            "/jobtracker/active" -> {
+            Config.SYNC_PATH_ACTIVE -> {
                 try {
                     if (payload == "null") {
                         PhonePersistence.saveActiveEntry(this, null)
@@ -60,7 +66,7 @@ class PhoneWearSyncService : WearableListenerService() {
                     Log.e("PhoneSync", "Active parse error", e)
                 }
             }
-            "/jobtracker/history" -> {
+            Config.SYNC_PATH_HISTORY -> {
                 try {
                     val arr = JSONArray(payload)
                     PhonePersistence.saveHistory(this, arr)

@@ -99,13 +99,13 @@ object Persistence {
     // --- Wards ---
 
     fun getWards(context: Context): List<String> {
-        val json = prefs(context).getString(KEY_WARDS, null) ?: return Config.ENTRY_TYPES
+        val json = prefs(context).getString(KEY_WARDS, null) ?: return emptyList()
         return try {
             val arr = JSONArray(json)
             (0 until arr.length()).map { arr.getString(it) }
         } catch (e: Exception) {
             Log.e(TAG, "getWards parse error", e)
-            Config.ENTRY_TYPES
+            emptyList()
         }
     }
 
@@ -159,6 +159,7 @@ object Persistence {
             Log.d(TAG, "saveActiveEntry: ${entry.type} @ ${entry.ward}")
         }
         Syncer.syncActive(context)
+        LiveUpdatesHelper.notifyDataChanged(context)
     }
 
     // --- History ---
@@ -174,6 +175,12 @@ object Persistence {
         }
     }
 
+    fun saveHistory(context: Context, historyJson: JSONArray) {
+        prefs(context).edit().putString(KEY_HISTORY, historyJson.toString()).apply()
+        Log.d(TAG, "saveHistory: ${historyJson.length()} records")
+        Syncer.syncHistory(context)
+    }
+
     fun saveToHistory(context: Context, record: HistoryRecord) {
         val history = getHistory(context).toMutableList()
         history.add(record)
@@ -183,12 +190,14 @@ object Persistence {
         prefs(context).edit().putString(KEY_HISTORY, arr.toString()).apply()
         Log.d(TAG, "saveToHistory: ${record.type} @ ${record.ward}, total=${limited.size}")
         Syncer.syncHistory(context)
+        LiveUpdatesHelper.notifyDataChanged(context)
     }
 
     fun clearHistory(context: Context) {
         prefs(context).edit().remove(KEY_HISTORY).apply()
         Log.d(TAG, "clearHistory")
         Syncer.syncHistory(context)
+        LiveUpdatesHelper.notifyDataChanged(context)
     }
 
     fun deleteHistoryAt(context: Context, index: Int) {
@@ -200,6 +209,7 @@ object Persistence {
             prefs(context).edit().putString(KEY_HISTORY, arr.toString()).apply()
             Log.d(TAG, "deleteHistoryAt: $index")
             Syncer.syncHistory(context)
+            LiveUpdatesHelper.notifyDataChanged(context)
         }
     }
 

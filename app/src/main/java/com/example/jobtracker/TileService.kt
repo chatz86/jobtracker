@@ -22,15 +22,23 @@ import com.google.common.util.concurrent.ListenableFuture
 
 class TileService : TileService() {
 
+    companion object {
+        private const val TAG = "JobTrackerTile"
+
+        fun requestUpdate(context: Context) {
+            try {
+                TileService.getUpdater(context).requestUpdate(TileService::class.java)
+            } catch (t: Throwable) {
+                android.util.Log.e(TAG, "tile update failed", t)
+            }
+        }
+    }
+
     override fun onTileRequest(requestParams: RequestBuilders.TileRequest): ListenableFuture<TileBuilders.Tile> {
         return Futures.immediateFuture(
             TileBuilders.Tile.Builder()
                 .setResourcesVersion("2")
-                .setTileTimeline(
-                    TimelineBuilders.Timeline.fromLayoutElement(
-                        layout(this, requestParams.deviceConfiguration)
-                    )
-                )
+                .setTileTimeline(buildTimeline(requestParams.deviceConfiguration))
                 .build()
         )
     }
@@ -43,61 +51,116 @@ class TileService : TileService() {
         )
     }
 
-    private fun layout(context: Context, deviceParameters: DeviceParametersBuilders.DeviceParameters): LayoutElementBuilders.LayoutElement {
-        val launchAction = ActionBuilders.LaunchAction.Builder()
+    private fun buildTimeline(deviceParameters: DeviceParametersBuilders.DeviceParameters): TimelineBuilders.Timeline {
+        val now = System.currentTimeMillis()
+        val entry = Persistence.getActiveEntry(this)
+        val timeline = TimelineBuilders.Timeline.Builder()
+
+        fun addEntry(start: Long, end: Long) {
+            timeline.addTimelineEntry(
+                TimelineBuilders.TimelineEntry.Builder()
+                    .setValidity(
+                        TimelineBuilders.TimeInterval.Builder()
+                            .setStartMillis(start)
+                            .setEndMillis(end)
+                            .build()
+                    )
+                    .setLayout(
+                        LayoutElementBuilders.Layout.Builder()
+                            .setRoot(layout(deviceParameters, start))
+                            .build()
+                    )
+                    .build()
+            )
+        }
+
+        if (entry != null) {
+            // Emit entries every 30s so the elapsed counter stays live without waking the phone.
+            val horizonMs = 30 * 60 * 1000L // 30 minutes
+            var t = now
+            while (t < now + horizonMs) {
+                addEntry(t, t + 30_000L)
+                t += 30_000L
+            }
+        } else {
+            addEntry(now, Long.MAX_VALUE)
+        }
+        return timeline.build()
+    }
+
+    private fun launchAction(): ActionBuilders.Action {
+        return ActionBuilders.LaunchAction.Builder()
             .setAndroidActivity(
                 ActionBuilders.AndroidActivity.Builder()
-                    .setPackageName(context.packageName)
+                    .setPackageName(packageName)
                     .setClassName(MainActivity::class.java.name)
                     .addKeyToExtraMapping(
                         "EXTRA_QUICK_START",
-                        ActionBuilders.AndroidBooleanExtra.Builder().setValue(true).build()
+                        ActionBuilders.AndroidBooleanExtra.Builder().setValue(false).build()
                     )
                     .build()
             )
             .build()
+    }
+
+    private fun layout(
+        deviceParameters: DeviceParametersBuilders.DeviceParameters,
+        atMillis: Long
+    ): LayoutElementBuilders.LayoutElement {
+        val entry = Persistence.getActiveEntry(this)
+        val history = Persistence.getHistory(this)
+        val last = history.lastOrNull()
 
         val clickable = ModifiersBuilders.Clickable.Builder()
-            .setOnClick(launchAction)
+            .setOnClick(launchAction())
             .build()
 
-        val entry = Persistence.getActiveEntry(context)
-        val history = Persistence.getHistory(context)
-        val lastJob = history.lastOrNull()
+        val primaryLabel = Text.Builder(
+            this,
+            if (entry != null) "TASK RUNNING" else if (last != null) "LAST JOB" else "NO JOBS"
+        )
+            .setTypography(Typography.TYPOGRAPHY_CAPTION1)
+            .setColor(ColorBuilders.argb(0xFF64B5F6.toInt()))
+            .build()
 
-        val label = when {
-            entry != null -> "${entry.type} - ${entry.ward}"
-            lastJob != null -> "Last: ${lastJob.ward}"
-            else -> "START"
+        val buttonLabel = when {
+            entry != null -> "${entry.type}  ${formatElapsed(atMillis - entry.startTime)}"
+            last != null -> "${last.ward}  ${formatElapsed(last.endTime - last.startTime)}"
+            else -> "Tap to start"
         }
 
-        val subtitle = when {
+        val secondaryText = when {
             entry != null -> {
-                val elapsed = System.currentTimeMillis() - entry.startTime
-                val hrs = elapsed / 3600000
-                val mins = (elapsed % 3600000) / 60000
-                "${String.format("%02d:%02d", hrs, mins)} running"
+                val atts = if (entry.attendees.isEmpty()) "Chat" else "Chat, ${entry.attendees.joinToString(", ")}"
+                "${entry.ward}  ·  $atts"
             }
-            history.isNotEmpty() -> "${history.size} jobs logged"
+            last != null -> "${last.type} · ${(listOf("Chat") + last.attendees).joinToString(", ")}"
             else -> "Job Tracker"
         }
+
+        val secondaryLabel = Text.Builder(this, secondaryText)
+            .setTypography(Typography.TYPOGRAPHY_CAPTION2)
+            .build()
 
         return PrimaryLayout.Builder(deviceParameters)
             .setResponsiveContentInsetEnabled(true)
             .setContent(
-                Button.Builder(context, clickable)
+                Button.Builder(this, clickable)
                     .setButtonColors(ButtonDefaults.PRIMARY_COLORS)
                     .setSize(DimensionBuilders.dp(120f))
-                    .setContentDescription(label)
-                    .setTextContent(label)
+                    .setContentDescription(buttonLabel)
+                    .setTextContent(buttonLabel)
                     .build()
             )
-            .setPrimaryLabelTextContent(
-                Text.Builder(context, subtitle)
-                    .setTypography(Typography.TYPOGRAPHY_CAPTION1)
-                    .setColor(ColorBuilders.argb(0xFF64B5F6.toInt()))
-                    .build()
-            )
+            .setPrimaryLabelTextContent(primaryLabel)
+            .setSecondaryLabelTextContent(secondaryLabel)
             .build()
+    }
+
+    private fun formatElapsed(ms: Long): String {
+        val mins = ms / 60000
+        val h = mins / 60
+        val m = mins % 60
+        return if (h > 0) "${h}h ${m}m" else "${m}m"
     }
 }

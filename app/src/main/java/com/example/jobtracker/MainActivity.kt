@@ -25,7 +25,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -355,23 +354,8 @@ fun JobTrackerScreen(quickStartFromIntent: Boolean = false) {
 
             is Screen.SelectAttendees -> {
                 item { ListHeader("Select SO's") }
-                attendees.forEach { attendee ->
-                    item {
-                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        val isSelected = attendee in selectedAttendees
-                        Button(
-                            onClick = {
-                                selectedAttendees = if (isSelected) selectedAttendees - attendee else selectedAttendees + attendee
-                            },
-                            modifier = Modifier.width(170.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isSelected) Color(0xFF1565C0) else Color(0xFF212121),
-                                contentColor = Color.White
-                            )
-                        ) { Text(attendee, textAlign = TextAlign.Center) }
-                    }
-}
-                }
+                // The green Start button sits at the very top so it can be reached without
+                // scrolling — with no SO's selected it starts as "Start (Chat)".
                 item {
                     Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Button(
@@ -392,11 +376,28 @@ fun JobTrackerScreen(quickStartFromIntent: Boolean = false) {
                         modifier = Modifier.width(170.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
                     ) {
-                        val label = if (selectedAttendees.isEmpty()) "Start Solo" else "Start (${selectedAttendees.size})"
+                        val label = if (selectedAttendees.isEmpty()) "Start (Chat)" else "Start (${selectedAttendees.size + 1})"
                         Text(label, color = Color.White, textAlign = TextAlign.Center)
                     }
                 }
 }
+                attendees.forEach { attendee ->
+                    item {
+                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        val isSelected = attendee in selectedAttendees
+                        Button(
+                            onClick = {
+                                selectedAttendees = if (isSelected) selectedAttendees - attendee else selectedAttendees + attendee
+                            },
+                            modifier = Modifier.width(170.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isSelected) Color(0xFF1565C0) else Color(0xFF212121),
+                                contentColor = Color.White
+                            )
+                        ) { Text(attendee, textAlign = TextAlign.Center) }
+                    }
+}
+                }
                 item { BackButton { screen = Screen.SelectWard } }
             }
 
@@ -416,7 +417,7 @@ fun JobTrackerScreen(quickStartFromIntent: Boolean = false) {
                         Text(selectedType, color = Color(0xFF64B5F6), fontSize = 18.sp)
                         Spacer(Modifier.height(4.dp))
                         Text(selectedWard, fontSize = 14.sp)
-                        val attendeeText = if (selectedAttendees.isEmpty()) "Solo" else selectedAttendees.joinToString(", ")
+                        val attendeeText = (listOf("Chat") + selectedAttendees).joinToString(", ")
                         Text(attendeeText, fontSize = 11.sp, color = Color.LightGray)
                         Spacer(Modifier.height(8.dp))
                         Text(formatDuration(elapsed), fontSize = 24.sp, color = Color(0xFF64B5F6))
@@ -564,7 +565,7 @@ fun JobTrackerScreen(quickStartFromIntent: Boolean = false) {
                     item { DetailRow("Time", "${formatTime(record.startTime)} - ${formatTime(record.endTime)}") }
                     val dur = record.endTime - record.startTime
                     if (dur > 0) item { DetailRow("Duration", formatDuration(dur)) }
-                    val attText = if (record.attendees.isEmpty()) "Solo" else record.attendees.joinToString(", ")
+                    val attText = (listOf("Chat") + record.attendees).joinToString(", ")
                     item { DetailRow("SO's", attText) }
                     if (record.patientName.isNotBlank()) item { DetailRow("Patient", record.patientName) }
                     if (record.patientId.isNotBlank()) item { DetailRow("UMRN", record.patientId) }
