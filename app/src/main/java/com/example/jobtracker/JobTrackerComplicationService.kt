@@ -10,6 +10,7 @@ import androidx.wear.watchface.complications.data.PlainComplicationText
 import androidx.wear.watchface.complications.data.ShortTextComplicationData
 import androidx.wear.watchface.complications.datasource.ComplicationRequest
 import androidx.wear.watchface.complications.datasource.SuspendingComplicationDataSourceService
+import java.util.Locale
 
 class JobTrackerComplicationService : SuspendingComplicationDataSourceService() {
 
@@ -107,6 +108,6 @@ class JobTrackerComplicationService : SuspendingComplicationDataSourceService() 
         val mins = ms / 60000
         val h = mins / 60
         val m = mins % 60
-        return if (h > 0) "${h}:${"%02d".format(m)}" else "${m}m"
+        return if (h > 0) "${h}:${String.format(Locale.US, "%02d", m)}" else "${m}m"
     }
 }

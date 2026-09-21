@@ -26,8 +26,10 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -36,11 +38,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import org.json.JSONArray
-import org.json.JSONObject
+import kotlinx.coroutines.delay
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
@@ -65,7 +67,12 @@ fun PhoneReceiverUI() {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context?, intent: Intent?) { refreshKey++ }
         }
-        context.registerReceiver(receiver, IntentFilter("com.example.jobtracker.REFRESH"), Context.RECEIVER_NOT_EXPORTED)
+        ContextCompat.registerReceiver(
+            context,
+            receiver,
+            IntentFilter("com.example.jobtracker.REFRESH"),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
         onDispose { context.unregisterReceiver(receiver) }
     }
 
@@ -160,9 +167,20 @@ fun PhoneReceiverUI() {
 
 @Composable
 fun ActiveJobCard(entry: PhoneActiveEntry) {
-    val elapsed = if (entry.startTime > 0) System.currentTimeMillis() - entry.startTime else 0L
+    // The card is only composed while a job is running, so this ticker keeps the
+    // elapsed counter live instead of freezing until the next sync arrives.
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(entry.startTime) {
+        while (true) {
+            now = System.currentTimeMillis()
+            delay(1000L)
+        }
+    }
+
+    val elapsed = if (entry.startTime > 0) now - entry.startTime else 0L
     val hrs = elapsed / 3600000
     val mins = (elapsed % 3600000) / 60000
+    val secs = (elapsed % 60000) / 1000
 
     Column(
         modifier = Modifier.fillMaxWidth().background(Color(0xFF1A2A1A)).padding(12.dp)
@@ -171,7 +189,15 @@ fun ActiveJobCard(entry: PhoneActiveEntry) {
         Text(entry.ward, fontSize = 14.sp, color = Color.White)
         val attText = (listOf("Chat") + entry.attendees).joinToString(", ")
         Text("SO's: $attText", fontSize = 12.sp, color = Color.LightGray)
-        Text("Running: ${String.format("%d:%02d", hrs, mins)}", fontSize = 12.sp, color = Color(0xFF4CAF50))
+        // Seconds are shown on purpose: a ticking clock is visible proof that the
+        // phone is receiving live data from the watch (a frozen value means sync
+        // stopped). Format matches the watch's timer (mm:ss, then h:mm:ss).
+        val runningText = if (hrs > 0) {
+            String.format(Locale.US, "%d:%02d:%02d", hrs, mins, secs)
+        } else {
+            String.format(Locale.US, "%02d:%02d", mins, secs)
+        }
+        Text("Running: $runningText", fontSize = 12.sp, color = Color(0xFF4CAF50))
         if (entry.patientName.isNotBlank()) Text("Patient: ${entry.patientName}", fontSize = 11.sp, color = Color.LightGray)
         if (entry.patientId.isNotBlank()) Text("UMRN: ${entry.patientId}", fontSize = 11.sp, color = Color.LightGray)
         if (entry.notes.isNotBlank()) Text("Notes: ${entry.notes}", fontSize = 11.sp, color = Color.LightGray)
@@ -193,7 +219,7 @@ fun HistoryItem(record: PhoneHistoryRecord) {
         if (dur > 0) {
             val hrs = dur / 3600000
             val mins = (dur % 3600000) / 60000
-            Text("Duration: ${String.format("%dh %02dm", hrs, mins)}", fontSize = 11.sp, color = Color.Gray)
+            Text("Duration: ${String.format(Locale.US, "%dh %02dm", hrs, mins)}", fontSize = 11.sp, color = Color.Gray)
         }
         val attText = (listOf("Chat") + record.attendees).joinToString(", ")
         Text("SO's: $attText", fontSize = 11.sp, color = Color.LightGray)

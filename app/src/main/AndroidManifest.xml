@@ -28,9 +28,16 @@
             android:name="com.google.android.gms.version"
             android:value="@integer/google_play_services_version" />
 
+        <!-- The watch app stores its own data and is fully usable without the phone
+             app, so it is installable standalone. -->
+        <meta-data
+            android:name="com.google.android.wearable.standalone"
+            android:value="true" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:taskAffinity="com.example.jobtracker"
             android:theme="@android:style/Theme.DeviceDefault">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -40,6 +47,7 @@
 
         <activity
             android:name=".KeyboardActivity"
+            android:taskAffinity="com.example.jobtracker"
             android:theme="@android:style/Theme.DeviceDefault"
             android:windowSoftInputMode="stateAlwaysVisible"
             android:exported="false" />

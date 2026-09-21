@@ -85,7 +85,8 @@ class KeyboardActivity : Activity() {
         input.requestFocus()
         input.postDelayed({
             val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
-            imm.showSoftInput(input, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+            // 0 == InputMethodManager.SHOW_IMPLICIT, which is deprecated as a constant.
+            imm.showSoftInput(input, 0)
         }, 300)
     }
 }

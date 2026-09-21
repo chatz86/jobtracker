@@ -1,8 +1,8 @@
 package com.example.jobtracker
 
+import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -39,8 +38,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
-import androidx.wear.compose.foundation.lazy.items
-import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.CompactButton
@@ -55,11 +52,22 @@ import java.util.Date
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
+    /**
+     * Taps on the tile / complication can arrive while this activity is already
+     * alive, so the "quick start" request is held as observable state instead of
+     * being read once from the launch intent.
+     */
+    private val quickStartRequested = mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        quickStartRequested.value = intent.getBooleanExtra(EXTRA_QUICK_START, false)
         setContent {
             MaterialTheme {
-                JobTrackerScreen(intent.getBooleanExtra("EXTRA_QUICK_START", false))
+                JobTrackerScreen(
+                    quickStart = quickStartRequested.value,
+                    onQuickStartConsumed = { quickStartRequested.value = false }
+                )
             }
         }
     }
@@ -67,11 +75,18 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (intent.getBooleanExtra(EXTRA_QUICK_START, false)) {
+            quickStartRequested.value = true
+        }
     }
 
     override fun onResume() {
         super.onResume()
         Syncer.syncAll(this)
+    }
+
+    companion object {
+        private const val EXTRA_QUICK_START = "EXTRA_QUICK_START"
     }
 }
 
@@ -96,7 +111,10 @@ enum class PinAction { ClearHistory, DeleteWards, DeleteAttendees }
 enum class ConcludeTarget { PatientName, PatientId, Notes }
 
 @Composable
-fun JobTrackerScreen(quickStartFromIntent: Boolean = false) {
+fun JobTrackerScreen(
+    quickStart: Boolean = false,
+    onQuickStartConsumed: () -> Unit = {}
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -105,8 +123,6 @@ fun JobTrackerScreen(quickStartFromIntent: Boolean = false) {
     var history by remember { mutableStateOf(Persistence.getHistory(context)) }
     var wards by remember { mutableStateOf(Persistence.getWards(context)) }
     var attendees by remember { mutableStateOf(Persistence.getAttendees(context)) }
-
-    var quickStartPending by remember { mutableStateOf(quickStartFromIntent) }
 
     var selectedType by remember { mutableStateOf("Job") }
     var selectedWard by remember { mutableStateOf("") }
@@ -159,34 +175,47 @@ fun JobTrackerScreen(quickStartFromIntent: Boolean = false) {
         val hrs = ms / 3600000
         val mins = (ms % 3600000) / 60000
         val secs = (ms % 60000) / 1000
-        return if (hrs > 0) String.format("%d:%02d:%02d", hrs, mins, secs) else String.format("%02d:%02d", mins, secs)
+        return if (hrs > 0) {
+            String.format(Locale.US, "%d:%02d:%02d", hrs, mins, secs)
+        } else {
+            String.format(Locale.US, "%02d:%02d", mins, secs)
+        }
     }
 
     val keyboardLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        val text = result.data?.getStringExtra("INPUT_TEXT") ?: ""
+        // Only apply text when the user tapped "Done" in KeyboardActivity. Cancelling
+        // returns RESULT_CANCELED with no payload and must not wipe an existing
+        // patient name / UMRN / notes value.
+        val text = if (result.resultCode == Activity.RESULT_OK) {
+            result.data?.getStringExtra("INPUT_TEXT")
+        } else {
+            null
+        }
         when {
             screen == Screen.ConcludeInput && concludeTarget == ConcludeTarget.PatientName -> {
-                patientName = text
+                text?.let { patientName = it }
             }
             screen == Screen.ConcludeInput && concludeTarget == ConcludeTarget.PatientId -> {
-                patientId = text
+                text?.let { patientId = it }
             }
             screen == Screen.ConcludeInput && concludeTarget == ConcludeTarget.Notes -> {
-                notes = text
+                text?.let { notes = it }
             }
             screen == Screen.AddText && addToTarget == "wards" -> {
-                if (text.isNotBlank()) {
-                    val updated = wards + text.trim()
+                val name = text?.trim().orEmpty()
+                if (name.isNotEmpty() && name !in wards) {
+                    val updated = wards + name
                     Persistence.saveWards(context, updated)
                     wards = updated
                     Syncer.syncConfig(context)
                 }
             }
             screen == Screen.AddText && addToTarget == "attendees" -> {
-                if (text.isNotBlank()) {
-                    val updated = attendees + text.trim()
+                val name = text?.trim().orEmpty()
+                if (name.isNotEmpty() && name !in attendees) {
+                    val updated = attendees + name
                     Persistence.saveAttendees(context, updated)
                     attendees = updated
                     Syncer.syncConfig(context)
@@ -220,8 +249,8 @@ fun JobTrackerScreen(quickStartFromIntent: Boolean = false) {
         }
     }
 
-    LaunchedEffect(quickStartPending) {
-        if (quickStartPending) {
+    LaunchedEffect(quickStart) {
+        if (quickStart) {
             if (activeEntry == null) {
                 selectedType = "Job"
                 selectedWard = ""
@@ -231,7 +260,7 @@ fun JobTrackerScreen(quickStartFromIntent: Boolean = false) {
                 notes = ""
                 screen = Screen.SelectType
             }
-            quickStartPending = false
+            onQuickStartConsumed()
         }
     }
 

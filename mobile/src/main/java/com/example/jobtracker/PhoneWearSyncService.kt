@@ -76,7 +76,10 @@ class PhoneWearSyncService : WearableListenerService() {
             }
         }
 
-        val refreshIntent = Intent("com.example.jobtracker.REFRESH")
+        // Target our own package explicitly: the receiver registered in MainActivity is
+        // RECEIVER_NOT_EXPORTED, and implicit broadcasts to non-exported receivers are
+        // rejected (UnsafeImplicitIntentLaunch) on newer platform versions.
+        val refreshIntent = Intent("com.example.jobtracker.REFRESH").setPackage(packageName)
         sendBroadcast(refreshIntent)
     }
 }

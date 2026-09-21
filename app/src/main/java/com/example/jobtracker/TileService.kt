@@ -53,7 +53,11 @@ class TileService : TileService() {
 
     private fun buildTimeline(deviceParameters: DeviceParametersBuilders.DeviceParameters): TimelineBuilders.Timeline {
         val now = System.currentTimeMillis()
+        // Snapshot the state once: a timeline can hold dozens of entries and every
+        // entry renders the same data, so there is no need to hit SharedPreferences
+        // (and JSON parsing) once per entry.
         val entry = Persistence.getActiveEntry(this)
+        val last = Persistence.getHistory(this).lastOrNull()
         val timeline = TimelineBuilders.Timeline.Builder()
 
         fun addEntry(start: Long, end: Long) {
@@ -67,7 +71,7 @@ class TileService : TileService() {
                     )
                     .setLayout(
                         LayoutElementBuilders.Layout.Builder()
-                            .setRoot(layout(deviceParameters, start))
+                            .setRoot(layout(deviceParameters, start, entry, last))
                             .build()
                     )
                     .build()
@@ -105,12 +109,10 @@ class TileService : TileService() {
 
     private fun layout(
         deviceParameters: DeviceParametersBuilders.DeviceParameters,
-        atMillis: Long
+        atMillis: Long,
+        entry: ActiveEntry?,
+        last: HistoryRecord?
     ): LayoutElementBuilders.LayoutElement {
-        val entry = Persistence.getActiveEntry(this)
-        val history = Persistence.getHistory(this)
-        val last = history.lastOrNull()
-
         val clickable = ModifiersBuilders.Clickable.Builder()
             .setOnClick(launchAction())
             .build()

@@ -41,6 +41,9 @@ class JobTrackerService : Service() {
 
         val notification = buildNotification(type, ward, startTime)
         startForeground(NOTIFICATION_ID, notification)
+        // Re-posting on every start would stack duplicate periodic syncs when a new
+        // job is started while the service is already running.
+        periodicHandler.removeCallbacks(periodicSync)
         periodicHandler.postDelayed(periodicSync, 30_000)
         return START_STICKY
     }
