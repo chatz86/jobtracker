@@ -7,26 +7,41 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.core.app.NotificationCompat
 import androidx.wear.ongoing.OngoingActivity
 
 class JobTrackerService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private val periodicHandler = Handler(Looper.getMainLooper())
+    private var syncTick = 0
     private val periodicSync = object : Runnable {
         override fun run() {
             Syncer.syncAll(this@JobTrackerService)
-            periodicHandler.postDelayed(this, 30_000)
+            syncTick++
+            // Active-job reminder: buzz every 4 ticks (4 x 30s = 2 minutes). Guarded
+            // by the active entry so it stops on its own if the entry is cleared.
+            if (syncTick % REMINDER_EVERY_TICKS == 0 &&
+                Persistence.getActiveEntry(this@JobTrackerService) != null
+            ) {
+                vibrateReminder()
+            }
+            periodicHandler.postDelayed(this, SYNC_INTERVAL_MS)
         }
     }
 
     companion object {
         const val CHANNEL_ID = "jobtracker_channel"
         const val NOTIFICATION_ID = 1
+        private const val SYNC_INTERVAL_MS = 30_000L
+        private const val REMINDER_EVERY_TICKS = 4
     }
 
     override fun onCreate() {
@@ -45,7 +60,8 @@ class JobTrackerService : Service() {
         // Re-posting on every start would stack duplicate periodic syncs when a new
         // job is started while the service is already running.
         periodicHandler.removeCallbacks(periodicSync)
-        periodicHandler.postDelayed(periodicSync, 30_000)
+        syncTick = 0
+        periodicHandler.postDelayed(periodicSync, SYNC_INTERVAL_MS)
         return START_STICKY
     }
 
@@ -101,6 +117,24 @@ class JobTrackerService : Service() {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "JobTracker::ActiveJob")
         wakeLock?.acquire(8 * 60 * 60 * 1000L) // 8 hours max
+    }
+
+    /**
+     * Short double-buzz nudge so a forgotten active job is noticed. Works with the
+     * screen off; only ever called while an active entry exists, and the service is
+     * stopped when a job is concluded. VIBRATE is a normal (install-time) permission
+     * and VibrationEffect has existed since API 26, so no version guard is needed
+     * beyond the VibratorManager lookup (API 31+).
+     */
+    private fun vibrateReminder() {
+        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            (getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager)?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+        }
+        if (vibrator == null || !vibrator.hasVibrator()) return
+        vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 250, 150, 250), -1))
     }
 
     private fun releaseWakeLock() {

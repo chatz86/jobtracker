@@ -9,6 +9,8 @@ paired Android phone app that mirrors the watch in real time.
 
 - Start a **Job**, **Foot Patrol** or **Vehicle Patrol** with a location and a
   list of security officers (SOs); a live timer runs while the job is active
+- A short double-buzz every 2 minutes while a job is running, so a forgotten
+  job is noticed in time to conclude it
 - Ongoing notification + Ongoing Activity, so the active job is visible on the
   watch face and in recents while it runs
 - Home-screen **tile** and **watch-face complications** showing live status
