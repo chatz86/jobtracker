@@ -5,12 +5,16 @@ import android.content.Intent
 import android.util.Log
 import androidx.wear.watchface.complications.data.ComplicationData
 import androidx.wear.watchface.complications.data.ComplicationType
+import androidx.wear.watchface.complications.data.CountUpTimeReference
 import androidx.wear.watchface.complications.data.LongTextComplicationData
 import androidx.wear.watchface.complications.data.PlainComplicationText
 import androidx.wear.watchface.complications.data.ShortTextComplicationData
+import androidx.wear.watchface.complications.data.TimeDifferenceComplicationText
+import androidx.wear.watchface.complications.data.TimeDifferenceStyle
 import androidx.wear.watchface.complications.datasource.ComplicationRequest
 import androidx.wear.watchface.complications.datasource.SuspendingComplicationDataSourceService
-import java.util.Locale
+import java.time.Instant
+import java.util.concurrent.TimeUnit
 
 class JobTrackerComplicationService : SuspendingComplicationDataSourceService() {
 
@@ -32,41 +36,55 @@ class JobTrackerComplicationService : SuspendingComplicationDataSourceService() 
 
         return when (request.complicationType) {
             ComplicationType.LONG_TEXT -> {
-                val title = when {
-                    entry != null -> "JOB ACTIVE"
-                    last != null -> "LAST JOB"
-                    else -> "TRACKER"
+                if (entry != null) {
+                    // Live stopwatch: the watch face itself renders the ticking
+                    // elapsed time, counting up from the job's start instant.
+                    LongTextComplicationData.Builder(
+                        text = TimeDifferenceComplicationText.Builder(
+                            TimeDifferenceStyle.SHORT_DUAL_UNIT,
+                            CountUpTimeReference(Instant.ofEpochMilli(entry.startTime))
+                        ).setMinimumTimeUnit(TimeUnit.SECONDS).build(),
+                        contentDescription = PlainComplicationText.Builder("Job Tracker: active job").build()
+                    ).setTitle(
+                        PlainComplicationText.Builder(entry.ward.ifBlank { "JOB ACTIVE" }).build()
+                    ).setTapAction(pendingIntent).build()
+                } else {
+                    val title = if (last != null) "LAST JOB" else "TRACKER"
+                    val text = when {
+                        last != null -> "${last.ward}  ${formatElapsed(last.endTime - last.startTime)}"
+                        else -> "Tap to start"
+                    }
+                    LongTextComplicationData.Builder(
+                        text = PlainComplicationText.Builder(text).build(),
+                        contentDescription = PlainComplicationText.Builder("Job Tracker status").build()
+                    ).setTitle(
+                        PlainComplicationText.Builder(title).build()
+                    ).setTapAction(pendingIntent).build()
                 }
-                val text = when {
-                    entry != null -> "${entry.ward}  ${formatElapsed(System.currentTimeMillis() - entry.startTime)}"
-                    last != null -> "${last.ward}  ${formatElapsed(last.endTime - last.startTime)}"
-                    else -> "Tap to start"
-                }
-                LongTextComplicationData.Builder(
-                    text = PlainComplicationText.Builder(text).build(),
-                    contentDescription = PlainComplicationText.Builder("Job Tracker status").build()
-                ).setTitle(
-                    PlainComplicationText.Builder(title).build()
-                ).setTapAction(pendingIntent).build()
             }
 
             else -> {
-                val title = when {
-                    entry != null -> shortType(entry.type)
-                    last != null -> "LAST"
-                    else -> "JOB"
+                if (entry != null) {
+                    // Live stopwatch in the compact text.
+                    ShortTextComplicationData.Builder(
+                        text = TimeDifferenceComplicationText.Builder(
+                            TimeDifferenceStyle.STOPWATCH,
+                            CountUpTimeReference(Instant.ofEpochMilli(entry.startTime))
+                        ).setMinimumTimeUnit(TimeUnit.SECONDS).build(),
+                        contentDescription = PlainComplicationText.Builder("Job Tracker: active job").build()
+                    ).setTitle(
+                        PlainComplicationText.Builder(shortType(entry.type)).build()
+                    ).setTapAction(pendingIntent).build()
+                } else {
+                    val title = if (last != null) "LAST" else "JOB"
+                    val text = if (last != null) last.ward else "START"
+                    ShortTextComplicationData.Builder(
+                        text = PlainComplicationText.Builder(text).build(),
+                        contentDescription = PlainComplicationText.Builder("Job Tracker status").build()
+                    ).setTitle(
+                        PlainComplicationText.Builder(title).build()
+                    ).setTapAction(pendingIntent).build()
                 }
-                val text = when {
-                    entry != null -> formatElapsedCompact(System.currentTimeMillis() - entry.startTime)
-                    last != null -> last.ward
-                    else -> "START"
-                }
-                ShortTextComplicationData.Builder(
-                    text = PlainComplicationText.Builder(text).build(),
-                    contentDescription = PlainComplicationText.Builder("Job Tracker status").build()
-                ).setTitle(
-                    PlainComplicationText.Builder(title).build()
-                ).setTapAction(pendingIntent).build()
             }
         }
     }
@@ -102,12 +120,5 @@ class JobTrackerComplicationService : SuspendingComplicationDataSourceService() 
         val h = mins / 60
         val m = mins % 60
         return if (h > 0) "${h}h ${m}m" else "${m}m"
-    }
-
-    private fun formatElapsedCompact(ms: Long): String {
-        val mins = ms / 60000
-        val h = mins / 60
-        val m = mins % 60
-        return if (h > 0) "${h}:${String.format(Locale.US, "%02d", m)}" else "${m}m"
     }
 }
