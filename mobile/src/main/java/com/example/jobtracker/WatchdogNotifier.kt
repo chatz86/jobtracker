@@ -38,10 +38,28 @@ object WatchdogNotifier {
                 elapsedH >= warnH -> 1
                 else -> 0
             }
+            // Alert levels belong to one job: a different start time means the earlier
+            // alerts must not suppress this job's.
+            val sameJob = PhonePersistence.getLastAlertStart(context) == entry.startTime
+            val lastLevel = if (sameJob) PhonePersistence.getLastAlertLevel(context) else 0
+
+            if (level == 0) {
+                if (lastLevel != 0) PhonePersistence.saveLastAlertLevel(context, 0)
+                return
+            }
             // Only alert on an increase: re-posting on every sync would nag.
-            if (level <= PhonePersistence.getLastAlertLevel(context)) return
+            if (level <= lastLevel) return
+            // Android 13+ needs the runtime permission to actually show anything. Do not
+            // consume the level in that case, so the alert still fires once it is granted.
+            if (Build.VERSION.SDK_INT >= 33 &&
+                ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED
+            ) {
+                Log.d(TAG, "POST_NOTIFICATIONS not granted, leaving level $level unalerted")
+                return
+            }
             PhonePersistence.saveLastAlertLevel(context, level)
-            if (level == 0) return
+            PhonePersistence.saveLastAlertStart(context, entry.startTime)
             post(context, entry, level)
         } catch (t: Throwable) {
             Log.e(TAG, "watchdog check failed", t)
@@ -51,6 +69,7 @@ object WatchdogNotifier {
     /** Called when a job ends (or is cleared) so the next job starts alerting afresh. */
     fun reset(context: Context) {
         PhonePersistence.saveLastAlertLevel(context, 0)
+        PhonePersistence.saveLastAlertStart(context, 0L)
         getManager(context)?.cancel(NOTIFICATION_ID)
     }
 
@@ -83,14 +102,7 @@ object WatchdogNotifier {
             .setAutoCancel(true)
             .build()
 
-        // Android 13+ needs the runtime permission; skip quietly if it was refused.
-        if (Build.VERSION.SDK_INT >= 33 &&
-            ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) !=
-            PackageManager.PERMISSION_GRANTED
-        ) {
-            Log.d(TAG, "POST_NOTIFICATIONS not granted, skipping watchdog notification")
-            return
-        }
+        // check() has already confirmed POST_NOTIFICATIONS is granted on 13+.
         manager.notify(NOTIFICATION_ID, notification)
     }
 }

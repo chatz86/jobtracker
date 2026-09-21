@@ -90,6 +90,7 @@ object PhonePersistence {
     private const val KEY_WARN_HOURS = "watchdog_warn_hours"
     private const val KEY_CRIT_HOURS = "watchdog_crit_hours"
     private const val KEY_LAST_ALERT_LEVEL = "watchdog_last_level"
+    private const val KEY_LAST_ALERT_START = "watchdog_last_start"
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -158,5 +159,12 @@ object PhonePersistence {
 
     fun saveLastAlertLevel(context: Context, level: Int) {
         prefs(context).edit().putInt(KEY_LAST_ALERT_LEVEL, level).apply()
+    }
+
+    /** Start time of the job the last alert belonged to, so a new job resets the level. */
+    fun getLastAlertStart(context: Context): Long = prefs(context).getLong(KEY_LAST_ALERT_START, 0L)
+
+    fun saveLastAlertStart(context: Context, startTime: Long) {
+        prefs(context).edit().putLong(KEY_LAST_ALERT_START, startTime).apply()
     }
 }

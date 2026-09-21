@@ -61,6 +61,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Re-check on open: if the phone was away while a job ran long, the alert should
+        // still appear without waiting for the next sync from the watch.
+        WatchdogNotifier.check(this)
+    }
+
     /**
      * The watchdog posts a phone notification when a job runs long. Android 13+ needs
      * the runtime permission for that, so it is asked for once on first launch.
