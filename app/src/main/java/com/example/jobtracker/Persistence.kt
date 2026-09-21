@@ -175,12 +175,6 @@ object Persistence {
         }
     }
 
-    fun saveHistory(context: Context, historyJson: JSONArray) {
-        prefs(context).edit().putString(KEY_HISTORY, historyJson.toString()).apply()
-        Log.d(TAG, "saveHistory: ${historyJson.length()} records")
-        Syncer.syncHistory(context)
-    }
-
     fun saveToHistory(context: Context, record: HistoryRecord) {
         val history = getHistory(context).toMutableList()
         history.add(record)
@@ -198,19 +192,6 @@ object Persistence {
         Log.d(TAG, "clearHistory")
         Syncer.syncHistory(context)
         LiveUpdatesHelper.notifyDataChanged(context)
-    }
-
-    fun deleteHistoryAt(context: Context, index: Int) {
-        val history = getHistory(context).toMutableList()
-        if (index in history.indices) {
-            history.removeAt(index)
-            val arr = JSONArray()
-            history.forEach { arr.put(it.toJson()) }
-            prefs(context).edit().putString(KEY_HISTORY, arr.toString()).apply()
-            Log.d(TAG, "deleteHistoryAt: $index")
-            Syncer.syncHistory(context)
-            LiveUpdatesHelper.notifyDataChanged(context)
-        }
     }
 
     fun deleteWards(context: Context, toDelete: Set<String>) {

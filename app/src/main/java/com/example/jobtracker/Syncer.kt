@@ -7,7 +7,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import org.json.JSONArray
@@ -69,9 +68,5 @@ object Syncer {
         syncConfig(context)
         syncActive(context)
         syncHistory(context)
-    }
-
-    fun destroy() {
-        scope.cancel()
     }
 }

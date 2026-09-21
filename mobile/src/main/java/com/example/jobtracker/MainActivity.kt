@@ -35,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -206,7 +207,9 @@ fun ActiveJobCard(entry: PhoneActiveEntry) {
 
 @Composable
 fun HistoryItem(record: PhoneHistoryRecord) {
-    val fmt = SimpleDateFormat("dd/MM/yy HH:mm", Locale.getDefault())
+    // LocalLocale is observable, so the format follows locale changes live.
+    val locale = LocalLocale.current.platformLocale
+    val fmt = remember(locale) { SimpleDateFormat("dd/MM/yy HH:mm", locale) }
 
     Column(
         modifier = Modifier.fillMaxWidth().background(Color(0xFF1A1A1A)).padding(12.dp)

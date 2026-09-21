@@ -748,7 +748,7 @@ fun JobTrackerScreen(
                                             "<" -> if (pinInput.isNotEmpty()) pinInput = pinInput.dropLast(1)
                                             else -> if (pinInput.length < 4) pinInput += char
                                         }
-                                        if (pinInput == Config.DELETION_PIN) {
+                                        if (Config.isDeletionPin(pinInput)) {
                                             pinInput = ""
                                             when (pinAction) {
                                                 PinAction.ClearHistory -> {

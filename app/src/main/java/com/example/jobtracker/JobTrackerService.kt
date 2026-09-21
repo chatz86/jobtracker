@@ -12,6 +12,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
+import androidx.wear.ongoing.OngoingActivity
 
 class JobTrackerService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
@@ -74,13 +75,26 @@ class JobTrackerService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("$type active")
+        val title = "$type active"
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle(title)
             .setContentText(ward)
-            .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+            // White-on-transparent monochrome icon, as Wear expects for notifications.
+            .setSmallIcon(R.drawable.ic_job_active)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
+            .setCategory(Notification.CATEGORY_STOPWATCH)
+
+        // Surface the running job on the watch face and in recents via the Ongoing
+        // Activity API so it can be reopened from anywhere on the device.
+        OngoingActivity.Builder(applicationContext, NOTIFICATION_ID, builder)
+            .setStaticIcon(R.drawable.ic_job_active)
+            .setTitle(title)
+            .setTouchIntent(pendingIntent)
             .build()
+            .apply(applicationContext)
+
+        return builder.build()
     }
 
     private fun acquireWakeLock() {
