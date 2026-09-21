@@ -433,9 +433,11 @@ fun JobTrackerScreen(
             is Screen.Active -> {
                 item {
                     var elapsed by remember { mutableLongStateOf(0L) }
+                    var pulseOn by remember { mutableStateOf(true) }
                     LaunchedEffect(screen) {
                         while (screen is Screen.Active) {
                             elapsed = if (startTime > 0) System.currentTimeMillis() - startTime else 0L
+                            pulseOn = !pulseOn
                             delay(1000L)
                         }
                     }
@@ -449,7 +451,12 @@ fun JobTrackerScreen(
                         val attendeeText = (listOf("Chat") + selectedAttendees).joinToString(", ")
                         Text(attendeeText, fontSize = 11.sp, color = Color.LightGray)
                         Spacer(Modifier.height(8.dp))
-                        Text(formatDuration(elapsed), fontSize = 24.sp, color = Color(0xFF64B5F6))
+                        // Pulsing red: a live task easy to spot at a glance.
+                        Text(
+                            formatDuration(elapsed),
+                            fontSize = 24.sp,
+                            color = if (pulseOn) Color(0xFFFF5252) else Color(0xFFC62828)
+                        )
                         Spacer(Modifier.height(4.dp))
                         Text("${formatTime(startTime)} - now", fontSize = 10.sp, color = Color.Gray)
                     }

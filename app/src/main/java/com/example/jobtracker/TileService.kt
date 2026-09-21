@@ -14,6 +14,7 @@ import androidx.wear.protolayout.material.ButtonDefaults
 import androidx.wear.protolayout.material.Text
 import androidx.wear.protolayout.material.Typography
 import androidx.wear.protolayout.material.layouts.PrimaryLayout
+import androidx.wear.protolayout.material.ButtonColors
 import androidx.wear.tiles.RequestBuilders
 import androidx.wear.tiles.TileBuilders
 import androidx.wear.tiles.TileService
@@ -117,18 +118,34 @@ class TileService : TileService() {
             .setOnClick(launchAction())
             .build()
 
+        // A live task draws its own attention: solid red banner and button.
+        val bannerColor = if (entry != null) {
+            ColorBuilders.argb(0xFFC62828.toInt())
+        } else {
+            ColorBuilders.argb(0xFF64B5F6.toInt())
+        }
+
         val primaryLabel = Text.Builder(
             this,
             if (entry != null) "TASK RUNNING" else if (last != null) "LAST JOB" else "NO JOBS"
         )
             .setTypography(Typography.TYPOGRAPHY_CAPTION1)
-            .setColor(ColorBuilders.argb(0xFF64B5F6.toInt()))
+            .setColor(bannerColor)
             .build()
 
         val buttonLabel = when {
             entry != null -> "${entry.type}  ${formatElapsed(atMillis - entry.startTime)}"
             last != null -> "${last.ward}  ${formatElapsed(last.endTime - last.startTime)}"
             else -> "Tap to start"
+        }
+
+        val buttonColors = if (entry != null) {
+            ButtonColors(
+                ColorBuilders.argb(0xFFC62828.toInt()),
+                ColorBuilders.argb(0xFFFFFFFF.toInt())
+            )
+        } else {
+            ButtonDefaults.PRIMARY_COLORS
         }
 
         val secondaryText = when {
@@ -148,7 +165,7 @@ class TileService : TileService() {
             .setResponsiveContentInsetEnabled(true)
             .setContent(
                 Button.Builder(this, clickable)
-                    .setButtonColors(ButtonDefaults.PRIMARY_COLORS)
+                    .setButtonColors(buttonColors)
                     .setSize(DimensionBuilders.dp(120f))
                     .setContentDescription(buttonLabel)
                     .setTextContent(buttonLabel)
