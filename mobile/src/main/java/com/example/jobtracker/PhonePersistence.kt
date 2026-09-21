@@ -87,6 +87,9 @@ object PhonePersistence {
     private const val KEY_HISTORY = "history"
     private const val KEY_WARDS = "wards"
     private const val KEY_ATTENDEES = "attendees"
+    private const val KEY_WARN_HOURS = "watchdog_warn_hours"
+    private const val KEY_CRIT_HOURS = "watchdog_crit_hours"
+    private const val KEY_LAST_ALERT_LEVEL = "watchdog_last_level"
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -135,5 +138,25 @@ object PhonePersistence {
 
     fun saveAttendees(context: Context, arr: JSONArray) {
         prefs(context).edit().putString(KEY_ATTENDEES, arr.toString()).apply()
+    }
+
+    // --- Watchdog thresholds (mirrored from the watch, which owns the settings) ---
+
+    fun getWarnHours(context: Context): Int = prefs(context).getInt(KEY_WARN_HOURS, 2)
+
+    fun getCritHours(context: Context): Int = prefs(context).getInt(KEY_CRIT_HOURS, 4)
+
+    fun saveWatchdog(context: Context, warnHours: Int, critHours: Int) {
+        prefs(context).edit()
+            .putInt(KEY_WARN_HOURS, warnHours)
+            .putInt(KEY_CRIT_HOURS, critHours)
+            .apply()
+    }
+
+    /** Highest alert level already shown for the current job (0 = none). */
+    fun getLastAlertLevel(context: Context): Int = prefs(context).getInt(KEY_LAST_ALERT_LEVEL, 0)
+
+    fun saveLastAlertLevel(context: Context, level: Int) {
+        prefs(context).edit().putInt(KEY_LAST_ALERT_LEVEL, level).apply()
     }
 }

@@ -22,16 +22,23 @@ class JobTrackerService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private val periodicHandler = Handler(Looper.getMainLooper())
     private var syncTick = 0
+    private var lastWarnLevel = 0
+    private var lastCritBuzz = 0L
     private val periodicSync = object : Runnable {
         override fun run() {
             Syncer.syncAll(this@JobTrackerService)
             syncTick++
-            // Active-job reminder: buzz every 4 ticks (4 x 30s = 2 minutes). Guarded
-            // by the active entry so it stops on its own if the entry is cleared.
-            if (syncTick % REMINDER_EVERY_TICKS == 0 &&
-                Persistence.getActiveEntry(this@JobTrackerService) != null
-            ) {
-                vibrateReminder()
+            val entry = Persistence.getActiveEntry(this@JobTrackerService)
+            if (entry != null) {
+                val now = System.currentTimeMillis()
+                // Configurable reminder: buzz every N minutes unless snoozed or off.
+                val reminderMin = Persistence.getReminderMinutes(this@JobTrackerService)
+                val snoozed = now < Persistence.getSnoozeUntil(this@JobTrackerService)
+                if (!snoozed && reminderMin > 0) {
+                    val ticksNeeded = (reminderMin * 60_000L / SYNC_INTERVAL_MS).toInt().coerceAtLeast(1)
+                    if (syncTick % ticksNeeded == 0) vibrateReminder()
+                }
+                checkWatchdog(entry.startTime, now)
             }
             periodicHandler.postDelayed(this, SYNC_INTERVAL_MS)
         }
@@ -40,8 +47,10 @@ class JobTrackerService : Service() {
     companion object {
         const val CHANNEL_ID = "jobtracker_channel"
         const val NOTIFICATION_ID = 1
+        const val ACTION_CONCLUDE = "com.example.jobtracker.CONCLUDE"
+        const val ACTION_SNOOZE = "com.example.jobtracker.SNOOZE_10"
         private const val SYNC_INTERVAL_MS = 30_000L
-        private const val REMINDER_EVERY_TICKS = 4
+        private const val SNOOZE_MS = 10 * 60_000L
     }
 
     override fun onCreate() {
@@ -51,6 +60,21 @@ class JobTrackerService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_CONCLUDE -> {
+                concludeFromNotification()
+                return START_NOT_STICKY
+            }
+            ACTION_SNOOZE -> {
+                Persistence.setSnoozeUntil(this, System.currentTimeMillis() + SNOOZE_MS)
+                // Re-post so the shade reflects the snoozed state immediately.
+                Persistence.getActiveEntry(this)?.let {
+                    val n = buildNotification(it.type, it.ward, it.startTime)
+                    getSystemService(NotificationManager::class.java)?.notify(NOTIFICATION_ID, n)
+                }
+                return START_STICKY
+            }
+        }
         val type = intent?.getStringExtra("TYPE") ?: "Job"
         val ward = intent?.getStringExtra("LOCATION") ?: ""
         val startTime = intent?.getLongExtra("START_TIME", System.currentTimeMillis()) ?: System.currentTimeMillis()
@@ -61,6 +85,9 @@ class JobTrackerService : Service() {
         // job is started while the service is already running.
         periodicHandler.removeCallbacks(periodicSync)
         syncTick = 0
+        lastWarnLevel = 0
+        lastCritBuzz = 0L
+        Persistence.clearSnooze(this)
         periodicHandler.postDelayed(periodicSync, SYNC_INTERVAL_MS)
         return START_STICKY
     }
@@ -101,6 +128,23 @@ class JobTrackerService : Service() {
             .setOngoing(true)
             .setCategory(Notification.CATEGORY_STOPWATCH)
 
+        val concludeIntent = Intent(this, JobTrackerService::class.java).apply { action = ACTION_CONCLUDE }
+        val concludePi = PendingIntent.getService(
+            this, 1, concludeIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val snoozeIntent = Intent(this, JobTrackerService::class.java).apply { action = ACTION_SNOOZE }
+        val snoozePi = PendingIntent.getService(
+            this, 2, snoozeIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val snoozed = System.currentTimeMillis() < Persistence.getSnoozeUntil(this)
+        val elapsedMin = ((System.currentTimeMillis() - startTime) / 60_000L).coerceAtLeast(0)
+        val content = if (snoozed) "$ward · snoozed 10 min" else contentForElapsed(ward, elapsedMin)
+        builder.setContentText(content)
+            .addAction(0, "Conclude", concludePi)
+            .addAction(0, "Snooze 10m", snoozePi)
+
         // Surface the running job on the watch face and in recents via the Ongoing
         // Activity API so it can be reopened from anywhere on the device.
         OngoingActivity.Builder(applicationContext, NOTIFICATION_ID, builder)
@@ -111,6 +155,65 @@ class JobTrackerService : Service() {
             .apply(applicationContext)
 
         return builder.build()
+    }
+
+    private fun contentForElapsed(ward: String, elapsedMin: Long): String {
+        if (elapsedMin < 60) return ward
+        val h = elapsedMin / 60
+        val m = elapsedMin % 60
+        val critH = Persistence.getCritHours(this).coerceAtLeast(1)
+        return if (elapsedMin >= critH * 60) "⚠ ${h}h ${m}m — still running? · $ward" else "$ward · ${h}h ${m}m"
+    }
+
+    /**
+     * Closes the active job straight from the notification shade (no Conclude
+     * screen, so patient/notes default to empty). Mirrors MainActivity.saveAndReturn
+     * minus the UI state.
+     */
+    private fun concludeFromNotification() {
+        val entry = Persistence.getActiveEntry(this) ?: run { stopSelf(); return }
+        val now = System.currentTimeMillis()
+        Persistence.saveToHistory(
+            this,
+            HistoryRecord(entry.type, entry.startTime, now, entry.ward, entry.attendees, entry.patientName, entry.patientId, entry.notes)
+        )
+        Persistence.saveActiveEntry(this, null)
+        Persistence.clearSnooze(this)
+        Syncer.syncHistory(this)
+        Syncer.syncActive(this)
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
+    /**
+     * Long-job watchdog: escalating buzz once past the warning threshold, then a
+     * critical pattern at most every 30 min past the critical threshold. Thresholds
+     * come from Settings (hours) so a "forgot to conclude" job can't sit silently.
+     */
+    private fun checkWatchdog(startTime: Long, now: Long) {
+        val warnH = Persistence.getWarnHours(this).coerceAtLeast(1)
+        var critH = Persistence.getCritHours(this).coerceAtLeast(1)
+        if (critH <= warnH) critH = warnH + 1
+        val elapsedH = (now - startTime) / 3_600_000.0
+        val level = when {
+            elapsedH >= critH -> 2
+            elapsedH >= warnH -> 1
+            else -> 0
+        }
+        if (level == 1 && lastWarnLevel == 0) {
+            // Warning: long pattern, once per crossing.
+            vibratePattern(longArrayOf(0, 500, 200, 500, 200, 1000))
+        } else if (level == 2 && now - lastCritBuzz >= 30 * 60_000L) {
+            // Critical: harsher triple-buzz, at most every 30 min.
+            vibratePattern(longArrayOf(0, 700, 200, 700, 200, 700, 400, 1200))
+            lastCritBuzz = now
+            // Refresh the notification text so the ⚠ elapsed line appears.
+            Persistence.getActiveEntry(this)?.let {
+                val n = buildNotification(it.type, it.ward, it.startTime)
+                getSystemService(NotificationManager::class.java)?.notify(NOTIFICATION_ID, n)
+            }
+        }
+        lastWarnLevel = level
     }
 
     private fun acquireWakeLock() {
@@ -127,6 +230,10 @@ class JobTrackerService : Service() {
      * beyond the VibratorManager lookup (API 31+).
      */
     private fun vibrateReminder() {
+        vibratePattern(longArrayOf(0, 250, 150, 250))
+    }
+
+    private fun vibratePattern(pattern: LongArray) {
         val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             (getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager)?.defaultVibrator
         } else {
@@ -134,7 +241,7 @@ class JobTrackerService : Service() {
             getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
         }
         if (vibrator == null || !vibrator.hasVibrator()) return
-        vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 250, 150, 250), -1))
+        vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1))
     }
 
     private fun releaseWakeLock() {

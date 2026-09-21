@@ -47,7 +47,13 @@ object Syncer {
     fun syncConfig(context: Context) {
         val wards = Persistence.getWards(context)
         val attendees = Persistence.getAttendees(context)
-        val payload = "WARDS:${JSONArray(wards).toString()}||ATTENDEES:${JSONArray(attendees).toString()}"
+        // Thresholds ride along with the config so the phone's watchdog mirrors the
+        // watch settings instead of duplicating them.
+        val warnHours = Persistence.getWarnHours(context)
+        var critHours = Persistence.getCritHours(context)
+        if (critHours <= warnHours) critHours = warnHours + 1
+        val payload = "WARDS:${JSONArray(wards).toString()}||ATTENDEES:${JSONArray(attendees).toString()}" +
+            "||WATCHDOG:$warnHours,$critHours"
         send(context, Config.SYNC_PATH_CONFIG, payload)
     }
 

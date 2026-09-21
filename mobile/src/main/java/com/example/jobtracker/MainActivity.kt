@@ -18,9 +18,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -30,6 +32,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -50,10 +53,26 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         PhoneSync.request(this)
+        requestNotificationPermissionIfNeeded()
         setContent {
             MaterialTheme {
                 PhoneReceiverUI()
             }
+        }
+    }
+
+    /**
+     * The watchdog posts a phone notification when a job runs long. Android 13+ needs
+     * the runtime permission for that, so it is asked for once on first launch.
+     */
+    private fun requestNotificationPermissionIfNeeded() {
+        if (android.os.Build.VERSION.SDK_INT < 33) return
+        val granted = ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!granted) {
+            androidx.core.app.ActivityCompat.requestPermissions(
+                this, arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 200
+            )
         }
     }
 }
@@ -81,6 +100,17 @@ fun PhoneReceiverUI() {
     val history = remember(refreshKey) { PhonePersistence.getHistory(context) }
     val wards = remember(refreshKey) { PhonePersistence.getWards(context) }
     val attendees = remember(refreshKey) { PhonePersistence.getAttendees(context) }
+    var query by remember { mutableStateOf("") }
+
+    // Free-text filter across everything a record holds, so a ward, a patient or a
+    // note can be found without scrolling the whole list.
+    val filteredHistory = remember(refreshKey, query) {
+        val q = query.trim().lowercase(Locale.US)
+        if (q.isEmpty()) history else history.filter { r ->
+            listOf(r.type, r.ward, r.patientName, r.patientId, r.notes, r.attendees.joinToString(" "))
+                .any { it.lowercase(Locale.US).contains(q) }
+        }
+    }
 
     Column(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         TopAppBar(
@@ -106,16 +136,35 @@ fun PhoneReceiverUI() {
             }
 
             item {
-                Text("HISTORY (${history.size})", fontSize = 11.sp, color = Color.Gray,
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    label = { Text("Search history") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
+            }
+            item {
+                Button(
+                    onClick = { CsvExporter.exportAndShare(context, filteredHistory) },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = filteredHistory.isNotEmpty()
+                ) { Text("Export ${filteredHistory.size} to CSV") }
+            }
+
+            item {
+                Text("HISTORY (${filteredHistory.size}${if (query.isBlank()) "" else " of ${history.size}"})",
+                    fontSize = 11.sp, color = Color.Gray,
                     fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 16.dp))
             }
-            if (history.isEmpty()) {
+            if (filteredHistory.isEmpty()) {
                 item {
-                    Text("No history", color = Color.Gray, fontSize = 13.sp,
+                    Text(if (query.isBlank()) "No history" else "No matches for \"$query\"",
+                        color = Color.Gray, fontSize = 13.sp,
                         modifier = Modifier.padding(vertical = 8.dp))
                 }
             }
-            items(history.asReversed()) { record ->
+            items(filteredHistory.asReversed()) { record ->
                 HistoryItem(record)
             }
 

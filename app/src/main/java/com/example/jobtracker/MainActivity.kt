@@ -50,6 +50,7 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import android.speech.RecognizerIntent
 
 class MainActivity : ComponentActivity() {
     /**
@@ -102,12 +103,14 @@ sealed class Screen {
     data object History : Screen()
     data object HistoryDetail : Screen()
     data object Settings : Screen()
+    data object ReminderInterval : Screen()
+    data object WatchdogThresholds : Screen()
     data object AddText : Screen()
     data object DeleteSelect : Screen()
     data object PinEntry : Screen()
 }
 
-enum class PinAction { ClearHistory, DeleteWards, DeleteAttendees }
+enum class PinAction { ClearHistory, DeleteWards, DeleteAttendees, DeleteSingle }
 enum class ConcludeTarget { PatientName, PatientId, Notes }
 
 @Composable
@@ -137,6 +140,7 @@ fun JobTrackerScreen(
     var pinInput by remember { mutableStateOf("") }
     var pinAction by remember { mutableStateOf(PinAction.ClearHistory) }
     var pendingDelete by remember { mutableStateOf(setOf<String>()) }
+    var deleteSingleIndex by remember { mutableIntStateOf(-1) }
 
     var addTextValue by remember { mutableStateOf("") }
     var addToTarget by remember { mutableStateOf("wards") }
@@ -164,6 +168,27 @@ fun JobTrackerScreen(
         Syncer.syncHistory(context)
         Syncer.syncActive(context)
         screen = Screen.Summary
+    }
+
+    fun startJob(type: String, ward: String, attendeeSet: Set<String>) {
+        selectedType = type
+        selectedWard = ward
+        selectedAttendees = attendeeSet
+        patientName = ""
+        patientId = ""
+        notes = ""
+        startTime = System.currentTimeMillis()
+        val entry = ActiveEntry(type, startTime, ward, attendeeSet.toList())
+        Persistence.saveActiveEntry(context, entry)
+        activeEntry = entry
+        Syncer.syncActive(context)
+        val serviceIntent = Intent(context, JobTrackerService::class.java).apply {
+            putExtra("TYPE", type)
+            putExtra("LOCATION", ward)
+            putExtra("START_TIME", startTime)
+        }
+        ContextCompat.startForegroundService(context, serviceIntent)
+        screen = Screen.Active
     }
 
     fun formatTime(ms: Long): String {
@@ -229,11 +254,51 @@ fun JobTrackerScreen(
         }
     }
 
+    val voiceLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode != Activity.RESULT_OK) return@rememberLauncherForActivityResult
+        val extras = result.data?.extras ?: return@rememberLauncherForActivityResult
+        // The recognizer returns its guesses as an ArrayList<String>; the first is
+        // the best match, which is all a short note or name needs.
+        val heard = extras.getCharSequenceArrayList(RecognizerIntent.EXTRA_RESULTS)
+            ?.firstOrNull()?.toString()?.trim().orEmpty()
+        if (heard.isEmpty()) return@rememberLauncherForActivityResult
+        // Names and UMRNs are single values, so they replace whatever is there (exactly
+        // like the keyboard). Notes are appended so a long note can be dictated in
+        // several passes without losing what was already typed.
+        when (concludeTarget) {
+            ConcludeTarget.PatientName -> patientName = heard
+            ConcludeTarget.PatientId -> patientId = heard
+            ConcludeTarget.Notes -> notes = if (notes.isBlank()) heard else "$notes $heard"
+        }
+        concludeInputValue = when (concludeTarget) {
+            ConcludeTarget.PatientName -> patientName
+            ConcludeTarget.PatientId -> patientId
+            ConcludeTarget.Notes -> notes
+        }
+        if (screen == Screen.ConcludeInput) screen = Screen.Conclude
+    }
+
     fun launchKeyboard(prompt: String) {
         val intent = Intent(context, KeyboardActivity::class.java).apply {
             putExtra("PROMPT", prompt)
         }
         keyboardLauncher.launch(intent)
+    }
+
+    fun launchVoice(prompt: String) {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_PROMPT, prompt)
+        }
+        try {
+            voiceLauncher.launch(intent)
+        } catch (e: android.content.ActivityNotFoundException) {
+            // No speech recognizer on this device (some watches ship without one):
+            // fall back to typing rather than losing the entry point.
+            launchKeyboard(prompt)
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -335,6 +400,18 @@ fun JobTrackerScreen(
                     ) { Text("History (${history.size})", textAlign = TextAlign.Center) }
                 }
 }
+                if (history.isNotEmpty()) {
+                    val last = history.last()
+                    item {
+                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        Button(
+                            onClick = { startJob(last.type, last.ward, last.attendees.toSet()) },
+                            modifier = Modifier.width(170.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
+                        ) { Text("Repeat Last Job", color = Color.White, textAlign = TextAlign.Center) }
+                    }
+                    }
+                }
                 item {
                     Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Button(
@@ -509,6 +586,7 @@ fun JobTrackerScreen(
                     }
 }
                 }
+                // Notes can be typed or dictated; both end up on the same field.
                 item {
                     Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Button(
@@ -520,8 +598,24 @@ fun JobTrackerScreen(
                         },
                         modifier = Modifier.width(170.dp)
                     ) {
-                        Text(if (notes.isNotBlank()) "Notes: ${notes.take(20)}" else "Notes (optional)", textAlign = TextAlign.Center)
+                        Text(
+                            if (notes.isNotBlank()) "Type Notes: ${notes.take(14)}" else "Type Notes",
+                            textAlign = TextAlign.Center
+                        )
                     }
+                }
+}
+                item {
+                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Button(
+                        onClick = {
+                            concludeTarget = ConcludeTarget.Notes
+                            concludeInputValue = notes
+                            launchVoice("Speak notes")
+                        },
+                        modifier = Modifier.width(170.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0277BD), contentColor = Color.White)
+                    ) { Text("Speak Notes", textAlign = TextAlign.Center) }
                 }
 }
                 item { Spacer(Modifier.height(4.dp)) }
@@ -607,11 +701,54 @@ fun JobTrackerScreen(
                     if (record.patientId.isNotBlank()) item { DetailRow("UMRN", record.patientId) }
                     if (record.notes.isNotBlank()) item { DetailRow("Notes", record.notes) }
                 }
+                item {
+                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Button(
+                        onClick = {
+                            deleteSingleIndex = selectedHistoryIndex
+                            pinAction = PinAction.DeleteSingle
+                            pinInput = ""
+                            screen = Screen.PinEntry
+                        },
+                        modifier = Modifier.width(170.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF212121), contentColor = Color.White)
+                    ) { Text("Delete This Entry", textAlign = TextAlign.Center) }
+                }
+                }
                 item { BackButton { screen = Screen.History } }
             }
 
             is Screen.Settings -> {
                 item { ListHeader("Settings") }
+
+                // Reminder interval picker
+                val reminderMin = Persistence.getReminderMinutes(context)
+                item {
+                    Text("Reminder interval: ${if (reminderMin == 0) "off" else "$reminderMin min"}", fontSize = 12.sp, color = Color.LightGray, modifier = Modifier.fillMaxWidth().padding(16.dp))
+                }
+                item {
+                    Button(
+                        onClick = { screen = Screen.ReminderInterval },
+                        modifier = Modifier.width(170.dp)
+                    ) { Text("Change…", textAlign = TextAlign.Center) }
+                }
+
+                // Long-job watchdog thresholds
+                item {
+                    Text(
+                        "Watchdog: warn ${Persistence.getWarnHours(context)}h, critical ${Persistence.getCritHours(context)}h",
+                        fontSize = 12.sp, color = Color.LightGray,
+                        modifier = Modifier.fillMaxWidth().padding(16.dp)
+                    )
+                }
+                item {
+                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Button(
+                        onClick = { screen = Screen.WatchdogThresholds },
+                        modifier = Modifier.width(170.dp)
+                    ) { Text("Watchdog Settings", textAlign = TextAlign.Center) }
+                }
+                }
                 item {
                     Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Button(
@@ -678,6 +815,102 @@ fun JobTrackerScreen(
                 }
 }
                 item { BackButton { screen = Screen.Idle } }
+            }
+
+            is Screen.ReminderInterval -> {
+                item { ListHeader("Buzz Every") }
+                val current = Persistence.getReminderMinutes(context)
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
+                    ) {
+                        listOf(0 to "Off", 1 to "1m", 2 to "2m").forEach { (mins, label) ->
+                            Button(
+                                onClick = { Persistence.setReminderMinutes(context, mins); screen = Screen.Settings },
+                                modifier = Modifier.width(56.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (current == mins) Color(0xFF2E7D32) else Color(0xFF212121),
+                                    contentColor = Color.White
+                                )
+                            ) { Text(label, fontSize = 11.sp, textAlign = TextAlign.Center) }
+                        }
+                    }
+                }
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
+                    ) {
+                        listOf(5 to "5m", 10 to "10m", 30 to "30m").forEach { (mins, label) ->
+                            Button(
+                                onClick = { Persistence.setReminderMinutes(context, mins); screen = Screen.Settings },
+                                modifier = Modifier.width(56.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (current == mins) Color(0xFF2E7D32) else Color(0xFF212121),
+                                    contentColor = Color.White
+                                )
+                            ) { Text(label, fontSize = 11.sp, textAlign = TextAlign.Center) }
+                        }
+                    }
+                }
+                item {
+                    Text(
+                        if (current == 0) "Nudges off" else "Nudges every $current min",
+                        fontSize = 11.sp, color = Color.LightGray, textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                item { BackButton { screen = Screen.Settings } }
+            }
+
+            is Screen.WatchdogThresholds -> {
+                item { ListHeader("Warn After") }
+                val warn = Persistence.getWarnHours(context)
+                val crit = Persistence.getCritHours(context)
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
+                    ) {
+                        listOf(1, 2, 4).forEach { hours ->
+                            Button(
+                                onClick = {
+                                    Persistence.setWarnHours(context, hours)
+                                    // Critical must stay above the warning threshold.
+                                    if (Persistence.getCritHours(context) <= hours) {
+                                        Persistence.setCritHours(context, hours + 1)
+                                    }
+                                    screen = Screen.Settings
+                                },
+                                modifier = Modifier.width(56.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (warn == hours) Color(0xFF2E7D32) else Color(0xFF212121),
+                                    contentColor = Color.White
+                                )
+                            ) { Text("${hours}h", fontSize = 11.sp, textAlign = TextAlign.Center) }
+                        }
+                    }
+                }
+                item { ListHeader("Critical After") }
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
+                    ) {
+                        listOf(warn + 1, warn + 2, warn + 4).forEach { hours ->
+                            Button(
+                                onClick = { Persistence.setCritHours(context, hours); screen = Screen.Settings },
+                                modifier = Modifier.width(56.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (crit == hours) Color(0xFF2E7D32) else Color(0xFF212121),
+                                    contentColor = Color.White
+                                )
+                            ) { Text("${hours}h", fontSize = 11.sp, textAlign = TextAlign.Center) }
+                        }
+                    }
+                }
+                item { BackButton { screen = Screen.Settings } }
             }
 
             is Screen.DeleteSelect -> {
@@ -767,6 +1000,12 @@ fun JobTrackerScreen(
                                                 PinAction.DeleteWards, PinAction.DeleteAttendees -> {
                                                     screen = Screen.DeleteSelect
                                                 }
+                                                PinAction.DeleteSingle -> {
+                                                    Persistence.deleteHistoryAt(context, deleteSingleIndex)
+                                                    history = Persistence.getHistory(context)
+                                                    deleteSingleIndex = -1
+                                                    screen = Screen.History
+                                                }
                                             }
                                         }
                                     },
@@ -797,7 +1036,7 @@ fun JobTrackerScreen(
             }
 
             is Screen.ConcludeInput -> {
-                item { ListHeader("Type Text") }
+                item { ListHeader(if (concludeTarget == ConcludeTarget.Notes) "Notes" else "Enter Text") }
                 item {
                     Text(concludeInputValue.ifBlank { "_" }, fontSize = 14.sp,
                         textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(16.dp))
@@ -808,6 +1047,15 @@ fun JobTrackerScreen(
                         onClick = { launchKeyboard("Enter text") },
                         modifier = Modifier.width(170.dp)
                     ) { Text("Type", textAlign = TextAlign.Center) }
+                }
+}
+                item {
+                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Button(
+                        onClick = { launchVoice("Speak") },
+                        modifier = Modifier.width(170.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0277BD), contentColor = Color.White)
+                    ) { Text("Speak", textAlign = TextAlign.Center) }
                 }
 }
                 item { BackButton { screen = Screen.Conclude } }

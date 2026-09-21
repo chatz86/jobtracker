@@ -92,6 +92,10 @@ object Persistence {
     private const val KEY_ATTENDEES = "attendees"
     private const val KEY_ACTIVE = "active_entry"
     private const val KEY_HISTORY = "history"
+    private const val KEY_REMINDER_MIN = "reminder_minutes"
+    private const val KEY_WARN_HOURS = "watchdog_warn_hours"
+    private const val KEY_CRIT_HOURS = "watchdog_crit_hours"
+    private const val KEY_SNOOZE_UNTIL = "snooze_until"
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(Config.PREFS_NAME, Context.MODE_PRIVATE)
@@ -194,6 +198,18 @@ object Persistence {
         LiveUpdatesHelper.notifyDataChanged(context)
     }
 
+    fun deleteHistoryAt(context: Context, index: Int) {
+        val history = getHistory(context).toMutableList()
+        if (index !in history.indices) return
+        history.removeAt(index)
+        val arr = JSONArray()
+        history.forEach { arr.put(it.toJson()) }
+        prefs(context).edit().putString(KEY_HISTORY, arr.toString()).apply()
+        Log.d(TAG, "deleteHistoryAt: $index, total=${history.size}")
+        Syncer.syncHistory(context)
+        LiveUpdatesHelper.notifyDataChanged(context)
+    }
+
     fun deleteWards(context: Context, toDelete: Set<String>) {
         val filtered = getWards(context).filter { it !in toDelete }
         saveWards(context, filtered)
@@ -202,5 +218,39 @@ object Persistence {
     fun deleteAttendees(context: Context, toDelete: Set<String>) {
         val filtered = getAttendees(context).filter { it !in toDelete }
         saveAttendees(context, filtered)
+    }
+
+    // --- Reminder + watchdog settings (watch-local, minutes/hours/ms) ---
+
+    fun getReminderMinutes(context: Context): Int =
+        prefs(context).getInt(KEY_REMINDER_MIN, 2)
+
+    fun setReminderMinutes(context: Context, minutes: Int) {
+        prefs(context).edit().putInt(KEY_REMINDER_MIN, minutes).apply()
+    }
+
+    fun getWarnHours(context: Context): Int =
+        prefs(context).getInt(KEY_WARN_HOURS, 2)
+
+    fun setWarnHours(context: Context, hours: Int) {
+        prefs(context).edit().putInt(KEY_WARN_HOURS, hours).apply()
+    }
+
+    fun getCritHours(context: Context): Int =
+        prefs(context).getInt(KEY_CRIT_HOURS, 4)
+
+    fun setCritHours(context: Context, hours: Int) {
+        prefs(context).edit().putInt(KEY_CRIT_HOURS, hours).apply()
+    }
+
+    fun getSnoozeUntil(context: Context): Long =
+        prefs(context).getLong(KEY_SNOOZE_UNTIL, 0L)
+
+    fun setSnoozeUntil(context: Context, until: Long) {
+        prefs(context).edit().putLong(KEY_SNOOZE_UNTIL, until).apply()
+    }
+
+    fun clearSnooze(context: Context) {
+        prefs(context).edit().remove(KEY_SNOOZE_UNTIL).apply()
     }
 }

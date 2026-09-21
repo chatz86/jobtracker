@@ -35,6 +35,13 @@ class PhoneWearSyncService : WearableListenerService() {
                                 val arr = JSONArray(part.removePrefix("ATTENDEES:"))
                                 PhonePersistence.saveAttendees(this, arr)
                             }
+                            part.startsWith("WATCHDOG:") -> {
+                                // "warn,crit" hours, as configured on the watch.
+                                val hours = part.removePrefix("WATCHDOG:").split(",")
+                                val warn = hours.getOrNull(0)?.trim()?.toIntOrNull() ?: 2
+                                val crit = hours.getOrNull(1)?.trim()?.toIntOrNull() ?: (warn + 1)
+                                PhonePersistence.saveWatchdog(this, warn, crit)
+                            }
                         }
                     }
                 } catch (e: Exception) {
@@ -45,8 +52,11 @@ class PhoneWearSyncService : WearableListenerService() {
                 try {
                     if (payload == "null") {
                         PhonePersistence.saveActiveEntry(this, null)
+                        // Job concluded: clear the watchdog state so the next job alerts afresh.
+                        WatchdogNotifier.reset(this)
                     } else {
                         PhonePersistence.saveActiveEntry(this, JSONObject(payload))
+                        WatchdogNotifier.check(this)
                     }
                 } catch (e: Exception) {
                     Log.e("PhoneSync", "Active parse error", e)
